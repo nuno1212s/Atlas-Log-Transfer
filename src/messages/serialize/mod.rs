@@ -5,15 +5,22 @@ use atlas_communication::reconfiguration_node::NetworkInformationProvider;
 
 use atlas_core::log_transfer::networking::serialize::LogTransferMessage;
 use atlas_core::log_transfer::networking::signature_ver::LogTransferVerificationHelper;
-use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage, PermissionedOrderingProtocolMessage, StatefulOrderProtocolMessage};
-use atlas_execution::serialize::ApplicationData;
+use atlas_core::ordering_protocol::loggable::PersistentOrderProtocolTypes;
+use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage};
+use atlas_core::smr::networking::serialize::DecisionLogMessage;
+use atlas_smr_application::serialize::ApplicationData;
 
 use crate::messages::{LogTransferMessageKind, LTMessage};
 
-pub struct LTMsg<D: ApplicationData, OP: OrderingProtocolMessage<D>, SOP: StatefulOrderProtocolMessage<D, OP>, POP: PermissionedOrderingProtocolMessage>(PhantomData<(D, OP, SOP, POP)>);
+pub struct LTMsg<D: ApplicationData,
+    OP: OrderingProtocolMessage<D>,
+    POPT: PersistentOrderProtocolTypes<D, OP>,
+    LS: DecisionLogMessage<D, OP, POPT>>(PhantomData<(D, OP, POPT, LS)>);
 
-impl<D: ApplicationData, OP: OrderingProtocolMessage<D>, SOP: StatefulOrderProtocolMessage<D, OP>, POP: PermissionedOrderingProtocolMessage> LogTransferMessage<D, OP> for LTMsg<D, OP, SOP, POP> {
-    type LogTransferMessage = LTMessage<POP::ViewInfo, OP::Proof, SOP::DecLog>;
+impl<D: ApplicationData, OP: OrderingProtocolMessage<D>,
+    POPT: PersistentOrderProtocolTypes<D, OP>,
+    LS: DecisionLogMessage<D, OP, POPT>> LogTransferMessage<D, OP> for LTMsg<D, OP, POPT, LS> {
+    type LogTransferMessage = LTMessage<POPT::Proof, LS::DecLog>;
 
     fn verify_log_message<NI, LVH>(network_info: &Arc<NI>, header: &Header, message: Self::LogTransferMessage) -> atlas_common::error::Result<(bool, Self::LogTransferMessage)>
         where NI: NetworkInformationProvider, LVH: LogTransferVerificationHelper<D, OP, NI>, {
@@ -21,9 +28,9 @@ impl<D: ApplicationData, OP: OrderingProtocolMessage<D>, SOP: StatefulOrderProto
             LogTransferMessageKind::RequestLogState => {
                 Ok((true, message))
             }
-            LogTransferMessageKind::ReplyLogState(view, opt) => {
+            LogTransferMessageKind::ReplyLogState(opt) => {
                 if let Some((first_seq, (last_seq, proof))) = opt {
-                    let (result, proof) = OP::verify_proof::<NI, LVH>(network_info, proof.clone())?;
+                    let (result, proof) = POPT::verify_proof::<NI, LVH>(network_info, proof.clone())?;
 
                     Ok((result, message))
                 } else {
@@ -33,9 +40,9 @@ impl<D: ApplicationData, OP: OrderingProtocolMessage<D>, SOP: StatefulOrderProto
             LogTransferMessageKind::RequestProofs(_) => {
                 Ok((true, message))
             }
-            LogTransferMessageKind::ReplyLogParts(vview, proofs) => {
+            LogTransferMessageKind::ReplyLogParts( proofs) => {
                 for (seq, proof) in proofs {
-                    let (result, proof) = OP::verify_proof::<NI, LVH>(network_info, proof.clone())?;
+                    let (result, proof) = POPT::verify_proof::<NI, LVH>(network_info, proof.clone())?;
 
                     if !result {
                         return Ok((false, message));
@@ -47,8 +54,8 @@ impl<D: ApplicationData, OP: OrderingProtocolMessage<D>, SOP: StatefulOrderProto
             LogTransferMessageKind::RequestLog => {
                 Ok((true, message))
             }
-            LogTransferMessageKind::ReplyLog(view_info, dec_log) => {
-                let (result, dec_log) = SOP::verify_decision_log::<NI, LVH>(network_info, dec_log.clone())?;
+            LogTransferMessageKind::ReplyLog(dec_log) => {
+                let (result, dec_log) = LS::verify_decision_log::<NI, LVH>(network_info, dec_log.clone())?;
 
                 Ok((result, message))
             }
