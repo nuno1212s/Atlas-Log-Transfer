@@ -71,7 +71,7 @@ pub struct CollabLogTransfer<D, OP, DL, NT, PL>
     where D: ApplicationData + 'static,
           OP: LoggableOrderProtocol<D, NT>,
           DL: DecisionLog<D, OP, NT, PL>,
-          NT: LogTransferSendNode<D, OP, LTMsg<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>> + 'static {
+          NT: LogTransferSendNode<D, OP::Serialization, LTMsg<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>> + 'static {
     // The current sequence number of the log transfer protocol
     curr_seq: SeqNo,
     // The default timeout for the log transfer protocol
@@ -240,37 +240,37 @@ impl<D, OP, DL, NT, PL> LogTransferProtocol<D, OP, DL, NT, PL> for CollabLogTran
 
         info!("{:?} // Requesting latest consensus seq no with seq {:?}", self.node.id(), lg_seq);
 
-        self.timeouts.timeout_lt_request(self.default_timeout, view.quorum_members() as u32, message.sequence_number());
+        self.timeouts.timeout_lt_request(self.default_timeout, view.quorum() as u32, message.sequence_number());
 
         self.node.broadcast(message, view.quorum_members().clone().into_iter());
 
         Ok(())
     }
 
-    fn handle_off_ctx_message<V>(&mut self, decision_log: &mut DL, view: V, message: StoredMessage<LogTransfer<LogTM<D, OP::Serialization, Self::Serialization>>>) -> Result<()>
+    fn handle_off_ctx_message<V>(&mut self, decision_log: &mut DL, view: V, message: StoredMessage<LogTM<D, OP::Serialization, Self::Serialization>>) -> Result<()>
         where PL: PersistentDecisionLog<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
               V: NetworkView {
         let (header, message) = message.into_inner();
 
-        debug!("{:?} // Off context Log Transfer Message {:?} from {:?} with seq {:?}", self.node.id(),message.payload(), header.from(), message.sequence_number());
+        debug!("{:?} // Off context Log Transfer Message {:?} from {:?} with seq {:?}", self.node.id(),message, header.from(), message.sequence_number());
 
-        match message.payload().kind() {
+        match message.kind() {
             LogTransferMessageKind::RequestLogState => {
-                let message = message.into_inner();
+                let message = message;
 
                 self.process_log_state_req(decision_log, header, message)?;
 
                 return Ok(());
             }
             LogTransferMessageKind::RequestProofs(log_parts) => {
-                let message = message.into_inner();
+                let message = message;
 
                 self.process_log_parts_request(decision_log, header, message)?;
 
                 return Ok(());
             }
             LogTransferMessageKind::RequestLog => {
-                let message = message.into_inner();
+                let message = message;
 
                 self.process_log_request(decision_log, header, message)?;
 
@@ -298,23 +298,23 @@ impl<D, OP, DL, NT, PL> LogTransferProtocol<D, OP, DL, NT, PL> for CollabLogTran
 
     fn process_message<V>(&mut self, decision_log: &mut DL,
                           view: V,
-                          message: StoredMessage<LogTransfer<LogTM<D, OP::Serialization, Self::Serialization>>>)
+                          message: StoredMessage<LogTM<D, OP::Serialization, Self::Serialization>>)
                           -> Result<LTResult<D>>
         where PL: PersistentDecisionLog<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
               V: NetworkView {
         let (header, message) = message.into_inner();
 
-        match message.payload().kind() {
+        match message.kind() {
             LogTransferMessageKind::RequestLogState => {
-                self.process_log_state_req(decision_log, header, message.into_inner())?;
+                self.process_log_state_req(decision_log, header, message)?;
                 return Ok(LTResult::Running);
             }
             LogTransferMessageKind::RequestProofs(_) => {
-                self.process_log_parts_request(decision_log, header, message.into_inner())?;
+                self.process_log_parts_request(decision_log, header, message)?;
                 return Ok(LTResult::Running);
             }
             LogTransferMessageKind::RequestLog => {
-                self.process_log_request(decision_log, header, message.into_inner())?;
+                self.process_log_request(decision_log, header, message)?;
                 return Ok(LTResult::Running);
             }
             _ => ()
@@ -334,14 +334,14 @@ impl<D, OP, DL, NT, PL> LogTransferProtocol<D, OP, DL, NT, PL> for CollabLogTran
         match lt_state {
             LogTransferState::Init => {
                 // Nothing is being done and this isn't a request, so ignore it
-                debug!("{:?} // Received log transfer message {:?} in Init state", self.node.id(), message.payload());
+                debug!("{:?} // Received log transfer message {:?} in Init state", self.node.id(), message);
 
                 self.log_transfer_state = LogTransferState::Init;
 
                 return Ok(LTResult::NotNeeded);
             }
             LogTransferState::FetchingSeqNo(i, mut curr_state) => {
-                match message.into_inner().into_kind() {
+                match message.into_kind() {
                     LogTransferMessageKind::ReplyLogState(data) => {
                         if let Some((first_seq, (last_seq, last_seq_proof))) = data {
                             if decision_log.verify_sequence_number(last_seq, &last_seq_proof)? {
@@ -410,7 +410,7 @@ impl<D, OP, DL, NT, PL> LogTransferProtocol<D, OP, DL, NT, PL> for CollabLogTran
                 }
             }
             LogTransferState::FetchingLog(i, data, current_log) => {
-                match message.into_inner().into_kind() {
+                match message.into_kind() {
                     LogTransferMessageKind::ReplyLog(log) => {
                         //FIXME: Unwraping this first seq is not really the correct thing to do
                         // as the log of the other replica might be empty because he has just checkpointed.
