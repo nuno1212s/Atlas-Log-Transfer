@@ -11,7 +11,7 @@ use atlas_common::node_id::NodeId;
 use atlas_common::ordering::{Orderable, SeqNo};
 use atlas_communication::message::{Header, StoredMessage};
 use atlas_communication::protocol_node::ProtocolNetworkNode;
-use atlas_core::log_transfer::{LogTM, LogTransferProtocol, LTResult, LTTimeoutResult};
+use atlas_core::log_transfer::{LogTM, LogTransferProtocol, LTPollResult, LTResult, LTTimeoutResult};
 use atlas_core::log_transfer::networking::LogTransferSendNode;
 use atlas_core::messages::LogTransfer;
 use atlas_core::ordering_protocol::{OrderingProtocol, PermissionedOrderingProtocol, View};
@@ -245,6 +245,10 @@ impl<D, OP, DL, NT, PL> LogTransferProtocol<D, OP, DL, NT, PL> for CollabLogTran
         self.node.broadcast(message, view.quorum_members().clone().into_iter());
 
         Ok(())
+    }
+
+    fn poll(&mut self) -> Result<LTPollResult<LogTM<D, OP, Self::Serialization>, D>> {
+        Ok(LTPollResult::ReceiveMsg)
     }
 
     fn handle_off_ctx_message<V>(&mut self, decision_log: &mut DL, view: V, message: StoredMessage<LogTM<D, OP::Serialization, Self::Serialization>>) -> Result<()>
