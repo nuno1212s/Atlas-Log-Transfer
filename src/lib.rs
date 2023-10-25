@@ -247,7 +247,7 @@ impl<D, OP, DL, NT, PL> LogTransferProtocol<D, OP, DL, NT, PL> for CollabLogTran
         Ok(())
     }
 
-    fn poll(&mut self) -> Result<LTPollResult<LogTM<D, OP, Self::Serialization>, D>> {
+    fn poll(&mut self) -> Result<LTPollResult<LogTM<D, OP::Serialization, Self::Serialization>, D>> {
         Ok(LTPollResult::ReceiveMsg)
     }
 
