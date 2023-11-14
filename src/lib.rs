@@ -207,9 +207,10 @@ impl<D, OP, DL, NT, PL> CollabLogTransfer<D, OP, DL, NT, PL>
 
 impl<D, OP, DL, NT, PL> LogTransferProtocol<D, OP, DL, NT, PL> for CollabLogTransfer<D, OP, DL, NT, PL>
     where D: ApplicationData + 'static,
-          OP: LoggableOrderProtocol<D, NT> + PermissionedOrderingProtocol,
+          OP: LoggableOrderProtocol<D, NT>,
           DL: DecisionLog<D, OP, NT, PL>,
-          NT: LogTransferSendNode<D, OP::Serialization, LTMsg<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>> + 'static {
+          NT: LogTransferSendNode<D, OP::Serialization, LTMsg<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>> + 'static,
+          PL: Send {
     type Serialization = LTMsg<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>;
     type Config = LogTransferConfig;
 
