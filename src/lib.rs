@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use anyhow::anyhow;
 
 use log::{debug, error, info, warn};
 
@@ -294,7 +295,7 @@ impl<D, OP, DL, NT, PL> LogTransferProtocol<D, OP, DL, NT, PL> for CollabLogTran
             LTResult::NotNeeded | LTResult::Running => (),
             // should not happen...
             _ => {
-                return Err(format!("Invalid state reached while processing log transfer message! {:?}", status)).wrapped(ErrorKind::CoreServer);
+                return Err(anyhow!(format!("Invalid state reached while processing log transfer message! {:?}", status)));
             }
         }
 
