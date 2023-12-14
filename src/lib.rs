@@ -344,7 +344,7 @@ impl<D, OP, DL, NT, PL> LogTransferProtocol<D, OP, DL, NT, PL> for CollabLogTran
 
                 self.log_transfer_state = LogTransferState::Init;
 
-                return Ok(LTResult::NotNeeded);
+                return Ok(LTResult::Ignored);
             }
             LogTransferState::FetchingSeqNo(i, mut curr_state) => {
                 match message.into_kind() {
@@ -387,7 +387,7 @@ impl<D, OP, DL, NT, PL> LogTransferProtocol<D, OP, DL, NT, PL> for CollabLogTran
                     if curr_state.last_seq > decision_log.sequence_number() {
                         let seq = curr_state.last_seq;
 
-                        debug!("{:?} // Installing sequence number and requesting decision log {:?}", self.node.id(), seq);
+                        info!("{:?} // Installing sequence number and requesting decision log {:?}", self.node.id(), seq);
 
                         let data = FetchSeqNo::from(&curr_state);
 
@@ -406,8 +406,8 @@ impl<D, OP, DL, NT, PL> LogTransferProtocol<D, OP, DL, NT, PL> for CollabLogTran
                     } else {
                         self.log_transfer_state = LogTransferState::FetchingSeqNo(i, curr_state);
 
-                        debug!("{:?} // No need to request log state, we are up to date", self.node.id());
-                        return Ok(LTResult::LTPFinished(decision_log.current_log()?.first_seq().unwrap_or(SeqNo::ZERO), decision_log.sequence_number(), MaybeVec::None));
+                        info!("{:?} // No need to request log state, we are up to date", self.node.id());
+                        return Ok(LTResult::NotNeeded);
                     }
                 } else {
                     self.log_transfer_state = LogTransferState::FetchingSeqNo(i, curr_state);
