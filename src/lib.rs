@@ -10,6 +10,7 @@ use atlas_common::error::*;
 use atlas_common::maybe_vec::MaybeVec;
 use atlas_common::node_id::NodeId;
 use atlas_common::ordering::{Orderable, SeqNo};
+use atlas_common::serialization_helper::SerType;
 use atlas_communication::message::{Header, StoredMessage};
 use atlas_communication::protocol_node::ProtocolNetworkNode;
 use atlas_core::log_transfer::{LogTM, LogTransferProtocol, LTPollResult, LTResult, LTTimeoutResult};
@@ -69,7 +70,7 @@ enum LogTransferState<P, D> {
 pub type Serialization<LT: LogTransferProtocol<D, OP, POP, NT, PL>, D, OP, POP, NT, PL> = <LT as LogTransferProtocol<D, OP, POP, NT, PL>>::Serialization;
 
 pub struct CollabLogTransfer<D, OP, DL, NT, PL>
-    where D: ApplicationData + 'static,
+    where D: SerType + 'static,
           OP: LoggableOrderProtocol<D, NT>,
           DL: DecisionLog<D, OP, NT, PL>,
           NT: LogTransferSendNode<D, OP::Serialization, LTMsg<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>> + 'static {
@@ -88,7 +89,7 @@ pub struct CollabLogTransfer<D, OP, DL, NT, PL>
 }
 
 impl<D, OP, DL, NT, PL> CollabLogTransfer<D, OP, DL, NT, PL>
-    where D: ApplicationData + 'static,
+    where D: SerType + 'static,
           OP: LoggableOrderProtocol<D, NT>,
           DL: DecisionLog<D, OP, NT, PL>,
           NT: LogTransferSendNode<D, OP::Serialization, LTMsg<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>> + 'static {
@@ -206,13 +207,13 @@ impl<D, OP, DL, NT, PL> CollabLogTransfer<D, OP, DL, NT, PL>
     }
 }
 
-impl<D, OP, DL, NT, PL> LogTransferProtocol<D, OP, DL, NT, PL> for CollabLogTransfer<D, OP, DL, NT, PL>
-    where D: ApplicationData + 'static,
-          OP: LoggableOrderProtocol<D, NT>,
-          DL: DecisionLog<D, OP, NT, PL>,
-          NT: LogTransferSendNode<D, OP::Serialization, LTMsg<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>> + 'static,
+impl<RQ, OP, DL, NT, PL> LogTransferProtocol<RQ, OP, DL, NT, PL> for CollabLogTransfer<RQ, OP, DL, NT, PL>
+    where RQ: SerType + 'static,
+          OP: LoggableOrderProtocol<RQ, NT>,
+          DL: DecisionLog<RQ, OP, NT, PL>,
+          NT: LogTransferSendNode<RQ, OP::Serialization, LTMsg<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>> + 'static,
           PL: Send {
-    type Serialization = LTMsg<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>;
+    type Serialization = LTMsg<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>;
     type Config = LogTransferConfig;
 
     fn initialize(config: Self::Config, timeouts: Timeouts, node: Arc<NT>, log: PL) -> Result<Self> where Self: Sized {
@@ -233,7 +234,7 @@ impl<D, OP, DL, NT, PL> LogTransferProtocol<D, OP, DL, NT, PL> for CollabLogTran
     }
 
     fn request_latest_log<V>(&mut self, decision_log: &mut DL, view: V) -> Result<()>
-        where PL: PersistentDecisionLog<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
+        where PL: PersistentDecisionLog<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
               V: NetworkView {
         self.log_transfer_state = LogTransferState::FetchingSeqNo(0, FetchSeqNoData::new());
 
@@ -249,12 +250,12 @@ impl<D, OP, DL, NT, PL> LogTransferProtocol<D, OP, DL, NT, PL> for CollabLogTran
         Ok(())
     }
 
-    fn poll(&mut self) -> Result<LTPollResult<LogTM<D, OP::Serialization, Self::Serialization>, D>> {
+    fn poll(&mut self) -> Result<LTPollResult<LogTM<RQ, OP::Serialization, Self::Serialization>, RQ>> {
         Ok(LTPollResult::ReceiveMsg)
     }
 
-    fn handle_off_ctx_message<V>(&mut self, decision_log: &mut DL, view: V, message: StoredMessage<LogTM<D, OP::Serialization, Self::Serialization>>) -> Result<()>
-        where PL: PersistentDecisionLog<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
+    fn handle_off_ctx_message<V>(&mut self, decision_log: &mut DL, view: V, message: StoredMessage<LogTM<RQ, OP::Serialization, Self::Serialization>>) -> Result<()>
+        where PL: PersistentDecisionLog<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
               V: NetworkView {
         let (header, message) = message.into_inner();
 
@@ -304,9 +305,9 @@ impl<D, OP, DL, NT, PL> LogTransferProtocol<D, OP, DL, NT, PL> for CollabLogTran
 
     fn process_message<V>(&mut self, decision_log: &mut DL,
                           view: V,
-                          message: StoredMessage<LogTM<D, OP::Serialization, Self::Serialization>>)
-                          -> Result<LTResult<D>>
-        where PL: PersistentDecisionLog<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
+                          message: StoredMessage<LogTM<RQ, OP::Serialization, Self::Serialization>>)
+                          -> Result<LTResult<RQ>>
+        where PL: PersistentDecisionLog<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
               V: NetworkView {
         let (header, message) = message.into_inner();
 
@@ -470,7 +471,7 @@ impl<D, OP, DL, NT, PL> LogTransferProtocol<D, OP, DL, NT, PL> for CollabLogTran
     }
 
     fn handle_timeout<V>(&mut self, view: V, timeout: Vec<RqTimeout>) -> Result<LTTimeoutResult>
-        where PL: PersistentDecisionLog<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>, {
+        where PL: PersistentDecisionLog<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>, {
         for lt_seq in timeout {
             if let TimeoutKind::LogTransfer(lt_seq) = lt_seq.timeout_kind() {
                 if let LTTimeoutResult::RunLTP = self.timed_out(*lt_seq) {

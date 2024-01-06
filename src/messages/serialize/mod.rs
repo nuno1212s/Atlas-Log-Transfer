@@ -3,6 +3,7 @@ use std::sync::Arc;
 use atlas_communication::message::Header;
 use atlas_communication::reconfiguration_node::NetworkInformationProvider;
 use atlas_common::ordering::Orderable;
+use atlas_common::serialization_helper::SerType;
 
 use atlas_core::log_transfer::networking::serialize::LogTransferMessage;
 use atlas_core::log_transfer::networking::signature_ver::LogTransferVerificationHelper;
@@ -13,18 +14,18 @@ use atlas_smr_application::serialize::ApplicationData;
 
 use crate::messages::{LogTransferMessageKind, LTMessage};
 
-pub struct LTMsg<D: ApplicationData,
-    OP: OrderingProtocolMessage<D>,
-    POPT: PersistentOrderProtocolTypes<D, OP>,
-    LS: DecisionLogMessage<D, OP, POPT>>(PhantomData<(D, OP, POPT, LS)>);
+pub struct LTMsg<RQ: SerType,
+    OP: OrderingProtocolMessage<RQ>,
+    POPT: PersistentOrderProtocolTypes<RQ, OP>,
+    LS: DecisionLogMessage<RQ, OP, POPT>>(PhantomData<fn() -> (RQ, OP, POPT, LS)>);
 
-impl<D: ApplicationData, OP: OrderingProtocolMessage<D>,
-    POPT: PersistentOrderProtocolTypes<D, OP>,
-    LS: DecisionLogMessage<D, OP, POPT>> LogTransferMessage<D, OP> for LTMsg<D, OP, POPT, LS> {
+impl<RQ: SerType, OP: OrderingProtocolMessage<RQ>,
+    POPT: PersistentOrderProtocolTypes<RQ, OP>,
+    LS: DecisionLogMessage<RQ, OP, POPT>> LogTransferMessage<RQ, OP> for LTMsg<RQ, OP, POPT, LS> {
     type LogTransferMessage = LTMessage<POPT::Proof, LS::DecLog>;
 
     fn verify_log_message<NI, LVH>(network_info: &Arc<NI>, header: &Header, message: Self::LogTransferMessage) -> atlas_common::error::Result< Self::LogTransferMessage>
-        where NI: NetworkInformationProvider, LVH: LogTransferVerificationHelper<D, OP, NI>, {
+        where NI: NetworkInformationProvider, LVH: LogTransferVerificationHelper<RQ, OP, NI>, {
 
         let seq = message.sequence_number();
 
