@@ -13,19 +13,17 @@ use atlas_common::ordering::{Orderable, SeqNo};
 use atlas_common::serialization_helper::SerType;
 use atlas_communication::message::{Header, StoredMessage};
 use atlas_communication::protocol_node::ProtocolNetworkNode;
-use atlas_core::log_transfer::{LogTM, LogTransferProtocol, LTPollResult, LTResult, LTTimeoutResult};
-use atlas_core::log_transfer::networking::LogTransferSendNode;
-use atlas_core::messages::LogTransfer;
 use atlas_core::ordering_protocol::{OrderingProtocol, PermissionedOrderingProtocol, View};
 use atlas_core::ordering_protocol::loggable::{LoggableOrderProtocol, PersistentOrderProtocolTypes, PProof};
 use atlas_core::ordering_protocol::networking::serialize::{NetworkView, OrderingProtocolMessage};
-use atlas_core::persistent_log::PersistentDecisionLog;
 use atlas_core::reconfiguration_protocol::ReconfigurationProtocol;
-use atlas_core::smr::networking::serialize::OrderProtocolLog;
-use atlas_core::smr::smr_decision_log::{DecisionLog, DecLog};
 use atlas_core::timeouts::{RqTimeout, TimeoutKind, Timeouts};
+use atlas_logging_core::decision_log::{DecisionLog, DecLog};
+use atlas_logging_core::decision_log::serialize::OrderProtocolLog;
+use atlas_logging_core::log_transfer::{LogTM, LogTransferProtocol, LTPollResult, LTResult, LTTimeoutResult};
+use atlas_logging_core::log_transfer::networking::LogTransferSendNode;
+use atlas_logging_core::persistent_log::PersistentDecisionLog;
 use atlas_metrics::metrics::metric_duration;
-use atlas_smr_application::serialize::ApplicationData;
 
 use crate::config::LogTransferConfig;
 use crate::messages::{LogTransferMessageKind, LTMessage};
@@ -67,12 +65,12 @@ enum LogTransferState<P, D> {
     FetchingLog(usize, FetchSeqNo, Option<D>),
 }
 
-pub type Serialization<LT: LogTransferProtocol<D, OP, POP, NT, PL>, D, OP, POP, NT, PL> = <LT as LogTransferProtocol<D, OP, POP, NT, PL>>::Serialization;
+pub type Serialization<LT: LogTransferProtocol<D, OP, POP, NT, PL, EX>, D, OP, POP, NT, PL, EX> = <LT as LogTransferProtocol<D, OP, POP, NT, PL, EX>>::Serialization;
 
-pub struct CollabLogTransfer<D, OP, DL, NT, PL>
+pub struct CollabLogTransfer<D, OP, DL, NT, PL, EX>
     where D: SerType + 'static,
           OP: LoggableOrderProtocol<D, NT>,
-          DL: DecisionLog<D, OP, NT, PL>,
+          DL: DecisionLog<D, OP, NT, PL, EX>,
           NT: LogTransferSendNode<D, OP::Serialization, LTMsg<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>> + 'static {
     // The current sequence number of the log transfer protocol
     curr_seq: SeqNo,
@@ -88,10 +86,10 @@ pub struct CollabLogTransfer<D, OP, DL, NT, PL>
     persistent_log: PL,
 }
 
-impl<D, OP, DL, NT, PL> CollabLogTransfer<D, OP, DL, NT, PL>
+impl<D, OP, DL, NT, PL, EX> CollabLogTransfer<D, OP, DL, NT, PL, EX>
     where D: SerType + 'static,
           OP: LoggableOrderProtocol<D, NT>,
-          DL: DecisionLog<D, OP, NT, PL>,
+          DL: DecisionLog<D, OP, NT, PL, EX>,
           NT: LogTransferSendNode<D, OP::Serialization, LTMsg<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>> + 'static {
     fn curr_seq(&self) -> SeqNo {
         self.curr_seq
@@ -207,10 +205,10 @@ impl<D, OP, DL, NT, PL> CollabLogTransfer<D, OP, DL, NT, PL>
     }
 }
 
-impl<RQ, OP, DL, NT, PL> LogTransferProtocol<RQ, OP, DL, NT, PL> for CollabLogTransfer<RQ, OP, DL, NT, PL>
+impl<RQ, OP, DL, NT, PL, EX> LogTransferProtocol<RQ, OP, DL, NT, PL, EX> for CollabLogTransfer<RQ, OP, DL, NT, PL, EX>
     where RQ: SerType + 'static,
           OP: LoggableOrderProtocol<RQ, NT>,
-          DL: DecisionLog<RQ, OP, NT, PL>,
+          DL: DecisionLog<RQ, OP, NT, PL, EX>,
           NT: LogTransferSendNode<RQ, OP::Serialization, LTMsg<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>> + 'static,
           PL: Send {
     type Serialization = LTMsg<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>;

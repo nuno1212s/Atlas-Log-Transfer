@@ -5,12 +5,11 @@ use atlas_communication::reconfiguration_node::NetworkInformationProvider;
 use atlas_common::ordering::Orderable;
 use atlas_common::serialization_helper::SerType;
 
-use atlas_core::log_transfer::networking::serialize::LogTransferMessage;
-use atlas_core::log_transfer::networking::signature_ver::LogTransferVerificationHelper;
 use atlas_core::ordering_protocol::loggable::PersistentOrderProtocolTypes;
 use atlas_core::ordering_protocol::networking::serialize::{OrderingProtocolMessage};
-use atlas_core::smr::networking::serialize::DecisionLogMessage;
-use atlas_smr_application::serialize::ApplicationData;
+use atlas_logging_core::decision_log::serialize::DecisionLogMessage;
+use atlas_logging_core::log_transfer::networking::serialize::LogTransferMessage;
+use atlas_logging_core::log_transfer::networking::signature_ver::LogTransferVerificationHelper;
 
 use crate::messages::{LogTransferMessageKind, LTMessage};
 
@@ -22,6 +21,7 @@ pub struct LTMsg<RQ: SerType,
 impl<RQ: SerType, OP: OrderingProtocolMessage<RQ>,
     POPT: PersistentOrderProtocolTypes<RQ, OP>,
     LS: DecisionLogMessage<RQ, OP, POPT>> LogTransferMessage<RQ, OP> for LTMsg<RQ, OP, POPT, LS> {
+
     type LogTransferMessage = LTMessage<POPT::Proof, LS::DecLog>;
 
     fn verify_log_message<NI, LVH>(network_info: &Arc<NI>, header: &Header, message: Self::LogTransferMessage) -> atlas_common::error::Result< Self::LogTransferMessage>
