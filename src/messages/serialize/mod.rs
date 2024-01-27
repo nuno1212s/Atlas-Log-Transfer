@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 use std::sync::Arc;
 use atlas_communication::message::Header;
-use atlas_communication::reconfiguration_node::NetworkInformationProvider;
+use atlas_communication::reconfiguration::NetworkInformationProvider;
 use atlas_common::ordering::Orderable;
 use atlas_common::serialization_helper::SerType;
 
