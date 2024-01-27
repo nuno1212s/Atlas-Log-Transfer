@@ -12,7 +12,6 @@ use atlas_common::node_id::NodeId;
 use atlas_common::ordering::{Orderable, SeqNo};
 use atlas_common::serialization_helper::SerType;
 use atlas_communication::message::{Header, StoredMessage};
-use atlas_communication::protocol_node::ProtocolNetworkNode;
 use atlas_core::ordering_protocol::{OrderingProtocol, PermissionedOrderingProtocol, View};
 use atlas_core::ordering_protocol::loggable::{LoggableOrderProtocol, PersistentOrderProtocolTypes, PProof};
 use atlas_core::ordering_protocol::networking::serialize::{NetworkView, OrderingProtocolMessage};

@@ -24,45 +24,41 @@ impl<RQ: SerType, OP: OrderingProtocolMessage<RQ>,
 
     type LogTransferMessage = LTMessage<POPT::Proof, LS::DecLog>;
 
-    fn verify_log_message<NI, LVH>(network_info: &Arc<NI>, header: &Header, message: Self::LogTransferMessage) -> atlas_common::error::Result< Self::LogTransferMessage>
+    fn verify_log_message<NI, LVH>(network_info: &Arc<NI>, header: &Header, message: &Self::LogTransferMessage) -> atlas_common::error::Result<()>
         where NI: NetworkInformationProvider, LVH: LogTransferVerificationHelper<RQ, OP, NI>, {
 
         let seq = message.sequence_number();
 
-        match message.into_kind() {
+        match message.kind() {
             LogTransferMessageKind::RequestLogState => {
-                Ok(LTMessage::new(seq, LogTransferMessageKind::RequestLogState))
+                Ok(())
             }
             LogTransferMessageKind::ReplyLogState(opt) => {
                 if let Some((first_seq, (last_seq, proof))) = opt {
                     let proof = POPT::verify_proof::<NI, LVH>(network_info, proof.clone())?;
 
-                    Ok(LTMessage::new(seq, LogTransferMessageKind::ReplyLogState(Some((first_seq, (last_seq, proof))))))
+                    Ok(())
                 } else {
-                    Ok(LTMessage::new(seq, LogTransferMessageKind::ReplyLogState(None)))
+                    Ok(())
                 }
             }
             LogTransferMessageKind::RequestProofs(seqs) => {
-                Ok(LTMessage::new(seq, LogTransferMessageKind::RequestProofs(seqs)))
+                Ok(())
             }
             LogTransferMessageKind::ReplyLogParts( proofs) => {
-                let mut proofs_cpy = Vec::with_capacity(proofs.len());
-
                 for (seq, proof) in proofs {
                     let proof = POPT::verify_proof::<NI, LVH>(network_info, proof.clone())?;
-
-                    proofs_cpy.push((seq, proof));
                 }
 
-                Ok(LTMessage::new(seq, LogTransferMessageKind::ReplyLogParts(proofs_cpy)))
+                Ok(())
             }
             LogTransferMessageKind::RequestLog => {
-                Ok(LTMessage::new(seq, LogTransferMessageKind::RequestLog))
+                Ok(())
             }
             LogTransferMessageKind::ReplyLog(dec_log) => {
                 let dec_log = LS::verify_decision_log::<NI, LVH>(network_info, dec_log.clone())?;
 
-                Ok(LTMessage::new(seq, LogTransferMessageKind::ReplyLog(dec_log)))
+                Ok(())
             }
         }
     }
