@@ -105,7 +105,7 @@ impl<D, OP, DL, NT, PL, EX> CollabLogTransfer<D, OP, DL, NT, PL, EX>
         let next_seq = self.next_seq();
         let message = LTMessage::new(next_seq, LogTransferMessageKind::RequestLog);
 
-        self.node.broadcast(message, view.quorum_members().clone().into_iter());
+        self.node.broadcast_signed(message, view.quorum_members().clone().into_iter());
 
         Ok(())
     }
@@ -131,7 +131,7 @@ impl<D, OP, DL, NT, PL, EX> CollabLogTransfer<D, OP, DL, NT, PL, EX>
 
         debug!("{:?} // Sending log state {:?} to {:?}", self.node.id(), message, header.from());
 
-        self.node.send(message, header.from(), true);
+        self.node.send_signed(message, header.from(), true);
 
         Ok(())
     }
@@ -163,7 +163,7 @@ impl<D, OP, DL, NT, PL, EX> CollabLogTransfer<D, OP, DL, NT, PL, EX>
 
                 let response_msg = LTMessage::new(message.sequence_number(), message_kind);
 
-                self.node.send(response_msg, header.from(), true);
+                self.node.send_signed(response_msg, header.from(), true);
             }
             _ => { unreachable!() }
         }
@@ -187,7 +187,7 @@ impl<D, OP, DL, NT, PL, EX> CollabLogTransfer<D, OP, DL, NT, PL, EX>
 
         let message = LTMessage::new(message.sequence_number(), message_kind);
 
-        self.node.send(message, header.from(), true);
+        self.node.send_signed(message, header.from(), true);
 
         Ok(())
     }
@@ -256,7 +256,7 @@ impl<RQ, OP, DL, NT, PL, EX> LogTransferProtocol<RQ, OP, DL> for CollabLogTransf
 
         self.timeouts.timeout_lt_request(self.default_timeout, view.quorum() as u32, message.sequence_number());
 
-        self.node.broadcast(message, view.quorum_members().clone().into_iter());
+        self.node.broadcast_signed(message, view.quorum_members().clone().into_iter());
 
         Ok(())
     }
