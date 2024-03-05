@@ -11,12 +11,12 @@ serialize_serde = ["serde", "bincode"]
 serialize_capnp = []
 
 [dependencies]
-anyhow = { version = "1.0.75", features = [] }
-thiserror = "1.0.50"
+anyhow = { version = "1.0", features = [] }
+thiserror = "1.0"
 atlas-capnp = { path = "../Atlas-capnp" }
 atlas-common = { path = "../Atlas-Common" }
-atlas-smr-application = { path = "../Atlas-SMR-Application" }
 atlas-core = { path = "../Atlas-Core" }
+atlas-logging-core = { path = "../Atlas-Logging-Core" }
 atlas-communication = { path = "../Atlas-Communication" }
 atlas-metrics = { path = "../Atlas-Metrics" }
 
