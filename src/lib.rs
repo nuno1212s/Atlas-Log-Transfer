@@ -8,17 +8,17 @@ use std::time::{Duration, Instant};
 use log::{debug, error, info, warn};
 
 use atlas_common::error::*;
-use atlas_common::maybe_vec::MaybeVec;
-use atlas_common::node_id::NodeId;
+
+
 use atlas_common::ordering::{Orderable, SeqNo};
 use atlas_common::serialization_helper::SerType;
 use atlas_communication::message::{Header, StoredMessage};
 use atlas_core::ordering_protocol::loggable::{
-    LoggableOrderProtocol, PProof, PersistentOrderProtocolTypes,
+    LoggableOrderProtocol, PProof,
 };
-use atlas_core::ordering_protocol::networking::serialize::{NetworkView, OrderingProtocolMessage};
-use atlas_core::ordering_protocol::{OrderingProtocol, PermissionedOrderingProtocol, View};
-use atlas_core::reconfiguration_protocol::ReconfigurationProtocol;
+use atlas_core::ordering_protocol::networking::serialize::{NetworkView};
+use atlas_core::ordering_protocol::{OrderingProtocol};
+
 use atlas_core::timeouts::{RqTimeout, TimeoutKind, Timeouts};
 use atlas_logging_core::decision_log::serialize::OrderProtocolLog;
 use atlas_logging_core::decision_log::{DecLog, DecisionLog};
@@ -70,7 +70,7 @@ enum LogTransferState<P, D> {
     FetchingLog(usize, FetchSeqNo, Option<D>),
 }
 
-pub type Serialization<LT: LogTransferProtocol<D, OP, POP>, D, OP, POP> =
+pub type Serialization<LT, D, OP, POP> =
     <LT as LogTransferProtocol<D, OP, POP>>::Serialization;
 
 pub struct CollabLogTransfer<D, OP, DL, NT, PL, EX>
@@ -114,9 +114,9 @@ where
 
     fn request_entire_log<V>(
         &mut self,
-        decision_log: &DL,
+        _decision_log: &DL,
         view: V,
-        fetch_data: FetchSeqNoData<PProof<D, OP::Serialization, OP::PersistableTypes>>,
+        _fetch_data: FetchSeqNoData<PProof<D, OP::Serialization, OP::PersistableTypes>>,
     ) -> Result<()>
     where
         V: NetworkView,
@@ -264,12 +264,12 @@ where
             return LTTimeoutResult::NotNeeded;
         }
 
-        return match self.log_transfer_state {
+        match self.log_transfer_state {
             LogTransferState::Init => LTTimeoutResult::NotNeeded,
             LogTransferState::FetchingSeqNo(_, _)
             | LogTransferState::FetchingLogParts(_, _)
             | LogTransferState::FetchingLog(_, _, _) => LTTimeoutResult::RunLTP,
-        };
+        }
     }
 }
 
@@ -329,7 +329,7 @@ where
     type Serialization = LTMsg<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>;
     type Config = LogTransferConfig;
 
-    fn request_latest_log<V>(&mut self, decision_log: &mut DL, view: V) -> Result<()>
+    fn request_latest_log<V>(&mut self, _decision_log: &mut DL, view: V) -> Result<()>
     where
         V: NetworkView,
     {
@@ -389,7 +389,7 @@ where
 
                 return Ok(());
             }
-            LogTransferMessageKind::RequestProofs(log_parts) => {
+            LogTransferMessageKind::RequestProofs(_log_parts) => {
                 let message = message;
 
                 self.process_log_parts_request(decision_log, header, message)?;
@@ -477,7 +477,7 @@ where
 
                 self.log_transfer_state = LogTransferState::Init;
 
-                return Ok(LTResult::Ignored);
+                Ok(LTResult::Ignored)
             }
             LogTransferState::FetchingSeqNo(i, mut curr_state) => {
                 match message.into_kind() {
@@ -547,7 +547,7 @@ where
                         // need to install the then latest sequence no;
                         // this is done with the function
                         // `install_recovery_state` from cst
-                        return Ok(LTResult::InstallSeq(seq));
+                        Ok(LTResult::InstallSeq(seq))
                     } else {
                         self.log_transfer_state = LogTransferState::FetchingSeqNo(i, curr_state);
 
@@ -555,12 +555,12 @@ where
                             "{:?} // No need to request log state, we are up to date",
                             self.node.id()
                         );
-                        return Ok(LTResult::NotNeeded);
+                        Ok(LTResult::NotNeeded)
                     }
                 } else {
                     self.log_transfer_state = LogTransferState::FetchingSeqNo(i, curr_state);
 
-                    return Ok(LTResult::Running);
+                    Ok(LTResult::Running)
                 }
             }
             LogTransferState::FetchingLog(i, data, current_log) => {
@@ -607,7 +607,7 @@ where
 
                 let i = i + 1;
 
-                return if i == view.quorum() {
+                if i == view.quorum() {
                     self.log_transfer_state = LogTransferState::FetchingLog(i, data, current_log);
 
                     // If we get quorum messages and still haven't received a correct log, we need to request it again
@@ -616,13 +616,13 @@ where
                     self.log_transfer_state = LogTransferState::FetchingLog(i, data, current_log);
 
                     Ok(LTResult::Running)
-                };
+                }
             }
             LogTransferState::FetchingLogParts(_, _) => todo!(),
         }
     }
 
-    fn handle_timeout<V>(&mut self, view: V, timeout: Vec<RqTimeout>) -> Result<LTTimeoutResult>
+    fn handle_timeout<V>(&mut self, _view: V, timeout: Vec<RqTimeout>) -> Result<LTTimeoutResult>
     where
         V: NetworkView,
     {
@@ -671,7 +671,7 @@ impl<P> From<&FetchSeqNoData<P>> for FetchSeqNo {
 
         received_votes.sort_by(|a, b| a.1.cmp(&b.1).reverse());
 
-        let (first_seq, votes) = received_votes.swap_remove(0);
+        let (first_seq, _votes) = received_votes.swap_remove(0);
 
         //TODO: Check if votes > f+1 ?
 

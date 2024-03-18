@@ -31,37 +31,37 @@ impl<
 
     fn verify_log_message<NI, LVH>(
         network_info: &Arc<NI>,
-        header: &Header,
+        _header: &Header,
         message: &Self::LogTransferMessage,
     ) -> atlas_common::error::Result<()>
     where
         NI: NetworkInformationProvider,
         LVH: LogTransferVerificationHelper<RQ, OP, NI>,
     {
-        let seq = message.sequence_number();
+        let _seq = message.sequence_number();
 
         match message.kind() {
             LogTransferMessageKind::RequestLogState => Ok(()),
             LogTransferMessageKind::ReplyLogState(opt) => {
-                if let Some((first_seq, (last_seq, proof))) = opt {
-                    let proof = POPT::verify_proof::<NI, LVH>(network_info, proof.clone())?;
+                if let Some((_first_seq, (_last_seq, proof))) = opt {
+                    let _proof = POPT::verify_proof::<NI, LVH>(network_info, proof.clone())?;
 
                     Ok(())
                 } else {
                     Ok(())
                 }
             }
-            LogTransferMessageKind::RequestProofs(seqs) => Ok(()),
+            LogTransferMessageKind::RequestProofs(_seqs) => Ok(()),
             LogTransferMessageKind::ReplyLogParts(proofs) => {
-                for (seq, proof) in proofs {
-                    let proof = POPT::verify_proof::<NI, LVH>(network_info, proof.clone())?;
+                for (_seq, proof) in proofs {
+                    let _proof = POPT::verify_proof::<NI, LVH>(network_info, proof.clone())?;
                 }
 
                 Ok(())
             }
             LogTransferMessageKind::RequestLog => Ok(()),
             LogTransferMessageKind::ReplyLog(dec_log) => {
-                let dec_log = LS::verify_decision_log::<NI, LVH>(network_info, dec_log.clone())?;
+                let _dec_log = LS::verify_decision_log::<NI, LVH>(network_info, dec_log.clone())?;
 
                 Ok(())
             }
