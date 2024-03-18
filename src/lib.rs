@@ -9,15 +9,12 @@ use log::{debug, error, info, warn};
 
 use atlas_common::error::*;
 
-
 use atlas_common::ordering::{Orderable, SeqNo};
 use atlas_common::serialization_helper::SerType;
 use atlas_communication::message::{Header, StoredMessage};
-use atlas_core::ordering_protocol::loggable::{
-    LoggableOrderProtocol, PProof,
-};
-use atlas_core::ordering_protocol::networking::serialize::{NetworkView};
-use atlas_core::ordering_protocol::{OrderingProtocol};
+use atlas_core::ordering_protocol::loggable::{LoggableOrderProtocol, PProof};
+use atlas_core::ordering_protocol::networking::serialize::NetworkView;
+use atlas_core::ordering_protocol::OrderingProtocol;
 
 use atlas_core::timeouts::{RqTimeout, TimeoutKind, Timeouts};
 use atlas_logging_core::decision_log::serialize::OrderProtocolLog;
@@ -70,8 +67,7 @@ enum LogTransferState<P, D> {
     FetchingLog(usize, FetchSeqNo, Option<D>),
 }
 
-pub type Serialization<LT, D, OP, POP> =
-    <LT as LogTransferProtocol<D, OP, POP>>::Serialization;
+pub type Serialization<LT, D, OP, POP> = <LT as LogTransferProtocol<D, OP, POP>>::Serialization;
 
 pub struct CollabLogTransfer<D, OP, DL, NT, PL, EX>
 where
