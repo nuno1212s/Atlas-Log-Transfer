@@ -1,8 +1,8 @@
 pub mod serialize;
 
-use std::fmt::Debug;
 #[cfg(feature = "serialize_serde")]
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
 
 use atlas_common::ordering::{Orderable, SeqNo};
 
@@ -56,7 +56,13 @@ impl<P, DL> Debug for LTMessage<P, DL> {
                 write!(f, "Request log state")
             }
             LogTransferMessageKind::ReplyLogState(opt) => {
-                write!(f, "Reply log state {:?}", opt.as_ref().map(|(seq, (last, _))| (*seq, *last)).unwrap_or((SeqNo::ZERO, SeqNo::ZERO)))
+                write!(
+                    f,
+                    "Reply log state {:?}",
+                    opt.as_ref()
+                        .map(|(seq, (last, _))| (*seq, *last))
+                        .unwrap_or((SeqNo::ZERO, SeqNo::ZERO))
+                )
             }
             LogTransferMessageKind::RequestProofs(_) => {
                 write!(f, "Request log proofs")
@@ -73,4 +79,3 @@ impl<P, DL> Debug for LTMessage<P, DL> {
         }
     }
 }
-

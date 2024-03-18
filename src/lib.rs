@@ -1,9 +1,9 @@
+use anyhow::anyhow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use anyhow::anyhow;
 
 use log::{debug, error, info, warn};
 
@@ -13,25 +13,30 @@ use atlas_common::node_id::NodeId;
 use atlas_common::ordering::{Orderable, SeqNo};
 use atlas_common::serialization_helper::SerType;
 use atlas_communication::message::{Header, StoredMessage};
-use atlas_core::ordering_protocol::{OrderingProtocol, PermissionedOrderingProtocol, View};
-use atlas_core::ordering_protocol::loggable::{LoggableOrderProtocol, PersistentOrderProtocolTypes, PProof};
+use atlas_core::ordering_protocol::loggable::{
+    LoggableOrderProtocol, PProof, PersistentOrderProtocolTypes,
+};
 use atlas_core::ordering_protocol::networking::serialize::{NetworkView, OrderingProtocolMessage};
+use atlas_core::ordering_protocol::{OrderingProtocol, PermissionedOrderingProtocol, View};
 use atlas_core::reconfiguration_protocol::ReconfigurationProtocol;
 use atlas_core::timeouts::{RqTimeout, TimeoutKind, Timeouts};
-use atlas_logging_core::decision_log::{DecisionLog, DecLog};
 use atlas_logging_core::decision_log::serialize::OrderProtocolLog;
-use atlas_logging_core::log_transfer::{LogTM, LogTransferProtocol, LogTransferProtocolInitializer, LTPollResult, LTResult, LTTimeoutResult};
+use atlas_logging_core::decision_log::{DecLog, DecisionLog};
 use atlas_logging_core::log_transfer::networking::LogTransferSendNode;
+use atlas_logging_core::log_transfer::{
+    LTPollResult, LTResult, LTTimeoutResult, LogTM, LogTransferProtocol,
+    LogTransferProtocolInitializer,
+};
 use atlas_logging_core::persistent_log::PersistentDecisionLog;
 use atlas_metrics::metrics::metric_duration;
 
 use crate::config::LogTransferConfig;
-use crate::messages::{LogTransferMessageKind, LTMessage};
 use crate::messages::serialize::LTMsg;
+use crate::messages::{LTMessage, LogTransferMessageKind};
 use crate::metrics::{LOG_TRANSFER_LOG_CLONE_TIME_ID, LOG_TRANSFER_PROOFS_CLONE_TIME_ID};
 
-pub mod messages;
 pub mod config;
+pub mod messages;
 pub mod metrics;
 
 #[derive(Clone)]
@@ -65,18 +70,24 @@ enum LogTransferState<P, D> {
     FetchingLog(usize, FetchSeqNo, Option<D>),
 }
 
-pub type Serialization<LT: LogTransferProtocol<D, OP, POP>, D, OP, POP> = <LT as LogTransferProtocol<D, OP, POP>>::Serialization;
+pub type Serialization<LT: LogTransferProtocol<D, OP, POP>, D, OP, POP> =
+    <LT as LogTransferProtocol<D, OP, POP>>::Serialization;
 
 pub struct CollabLogTransfer<D, OP, DL, NT, PL, EX>
-    where D: SerType + 'static,
-          OP: LoggableOrderProtocol<D>,
-          DL: DecisionLog<D, OP>, {
+where
+    D: SerType + 'static,
+    OP: LoggableOrderProtocol<D>,
+    DL: DecisionLog<D, OP>,
+{
     // The current sequence number of the log transfer protocol
     curr_seq: SeqNo,
     // The default timeout for the log transfer protocol
     default_timeout: Duration,
     /// The current state of the log transfer protocol
-    log_transfer_state: LogTransferState<PProof<D, OP::Serialization, OP::PersistableTypes>, DecLog<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>>,
+    log_transfer_state: LogTransferState<
+        PProof<D, OP::Serialization, OP::PersistableTypes>,
+        DecLog<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
+    >,
     /// Reference to the timeouts module
     timeouts: Timeouts,
     /// Reference to the persistent log
@@ -86,9 +97,11 @@ pub struct CollabLogTransfer<D, OP, DL, NT, PL, EX>
 }
 
 impl<D, OP, DL, NT, PL, EX> CollabLogTransfer<D, OP, DL, NT, PL, EX>
-    where D: SerType + 'static,
-          OP: LoggableOrderProtocol<D>,
-          DL: DecisionLog<D, OP>, {
+where
+    D: SerType + 'static,
+    OP: LoggableOrderProtocol<D>,
+    DL: DecisionLog<D, OP>,
+{
     fn curr_seq(&self) -> SeqNo {
         self.curr_seq
     }
@@ -99,23 +112,46 @@ impl<D, OP, DL, NT, PL, EX> CollabLogTransfer<D, OP, DL, NT, PL, EX>
         self.curr_seq
     }
 
-    fn request_entire_log<V>(&mut self, decision_log: &DL, view: V, fetch_data: FetchSeqNoData<PProof<D, OP::Serialization, OP::PersistableTypes>>) -> Result<()>
-        where V: NetworkView,
-              NT: LogTransferSendNode<D, OP::Serialization, LTMsg<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>> {
+    fn request_entire_log<V>(
+        &mut self,
+        decision_log: &DL,
+        view: V,
+        fetch_data: FetchSeqNoData<PProof<D, OP::Serialization, OP::PersistableTypes>>,
+    ) -> Result<()>
+    where
+        V: NetworkView,
+        NT: LogTransferSendNode<
+            D,
+            OP::Serialization,
+            LTMsg<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
+        >,
+    {
         let next_seq = self.next_seq();
         let message = LTMessage::new(next_seq, LogTransferMessageKind::RequestLog);
 
-        self.node.broadcast_signed(message, view.quorum_members().clone().into_iter());
+        self.node
+            .broadcast_signed(message, view.quorum_members().clone().into_iter());
 
         Ok(())
     }
 
-    fn process_log_state_req(&self, decision_log: &mut DL,
-                             header: Header,
-                             message: LTMessage<PProof<D, OP::Serialization, OP::PersistableTypes>, DecLog<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>>)
-                             -> Result<()>
-        where PL: PersistentDecisionLog<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
-              NT: LogTransferSendNode<D, OP::Serialization, LTMsg<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>> {
+    fn process_log_state_req(
+        &self,
+        decision_log: &mut DL,
+        header: Header,
+        message: LTMessage<
+            PProof<D, OP::Serialization, OP::PersistableTypes>,
+            DecLog<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
+        >,
+    ) -> Result<()>
+    where
+        PL: PersistentDecisionLog<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
+        NT: LogTransferSendNode<
+            D,
+            OP::Serialization,
+            LTMsg<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
+        >,
+    {
         let log = decision_log.current_log()?;
 
         let first_seq = log.first_seq();
@@ -129,19 +165,34 @@ impl<D, OP, DL, NT, PL, EX> CollabLogTransfer<D, OP, DL, NT, PL, EX>
 
         let message = LTMessage::new(message.sequence_number(), response_msg);
 
-        debug!("{:?} // Sending log state {:?} to {:?}", self.node.id(), message, header.from());
+        debug!(
+            "{:?} // Sending log state {:?} to {:?}",
+            self.node.id(),
+            message,
+            header.from()
+        );
 
         self.node.send_signed(message, header.from(), true);
 
         Ok(())
     }
 
-    fn process_log_parts_request(&self, decision_log: &mut DL,
-                                 header: Header,
-                                 message: LTMessage<PProof<D, OP::Serialization, OP::PersistableTypes>, DecLog<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>>)
-                                 -> Result<()>
-        where PL: PersistentDecisionLog<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
-              NT: LogTransferSendNode<D, OP::Serialization, LTMsg<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>>
+    fn process_log_parts_request(
+        &self,
+        decision_log: &mut DL,
+        header: Header,
+        message: LTMessage<
+            PProof<D, OP::Serialization, OP::PersistableTypes>,
+            DecLog<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
+        >,
+    ) -> Result<()>
+    where
+        PL: PersistentDecisionLog<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
+        NT: LogTransferSendNode<
+            D,
+            OP::Serialization,
+            LTMsg<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
+        >,
     {
         match message.kind() {
             LogTransferMessageKind::RequestProofs(log_parts) => {
@@ -153,7 +204,10 @@ impl<D, OP, DL, NT, PL, EX> CollabLogTransfer<D, OP, DL, NT, PL, EX>
                     if let Some(part) = decision_log.get_proof(*part_seq)? {
                         parts.push((*part_seq, part))
                     } else {
-                        error!("Request for log part {:?} failed as we do not possess it", *part_seq);
+                        error!(
+                            "Request for log part {:?} failed as we do not possess it",
+                            *part_seq
+                        );
                     }
                 }
 
@@ -165,18 +219,31 @@ impl<D, OP, DL, NT, PL, EX> CollabLogTransfer<D, OP, DL, NT, PL, EX>
 
                 self.node.send_signed(response_msg, header.from(), true);
             }
-            _ => { unreachable!() }
+            _ => {
+                unreachable!()
+            }
         }
 
         Ok(())
     }
 
-    fn process_log_request(&self, decision_log: &mut DL,
-                           header: Header,
-                           message: LTMessage<PProof<D, OP::Serialization, OP::PersistableTypes>, DecLog<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>>)
-                           -> Result<()>
-        where PL: PersistentDecisionLog<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
-              NT: LogTransferSendNode<D, OP::Serialization, LTMsg<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>> {
+    fn process_log_request(
+        &self,
+        decision_log: &mut DL,
+        header: Header,
+        message: LTMessage<
+            PProof<D, OP::Serialization, OP::PersistableTypes>,
+            DecLog<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
+        >,
+    ) -> Result<()>
+    where
+        PL: PersistentDecisionLog<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
+        NT: LogTransferSendNode<
+            D,
+            OP::Serialization,
+            LTMsg<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
+        >,
+    {
         let start = Instant::now();
 
         let decision_log = decision_log.snapshot_log()?;
@@ -198,27 +265,39 @@ impl<D, OP, DL, NT, PL, EX> CollabLogTransfer<D, OP, DL, NT, PL, EX>
         }
 
         return match self.log_transfer_state {
-            LogTransferState::Init => {
-                LTTimeoutResult::NotNeeded
-            }
-            LogTransferState::FetchingSeqNo(_, _) | LogTransferState::FetchingLogParts(_, _) | LogTransferState::FetchingLog(_, _, _) => {
-                LTTimeoutResult::RunLTP
-            }
+            LogTransferState::Init => LTTimeoutResult::NotNeeded,
+            LogTransferState::FetchingSeqNo(_, _)
+            | LogTransferState::FetchingLogParts(_, _)
+            | LogTransferState::FetchingLog(_, _, _) => LTTimeoutResult::RunLTP,
         };
     }
 }
 
-impl<RQ, OP, DL, NT, PL, EX> LogTransferProtocolInitializer<RQ, OP, DL, PL, EX, NT> for CollabLogTransfer<RQ, OP, DL, NT, PL, EX>
-    where RQ: SerType + 'static,
-          OP: LoggableOrderProtocol<RQ>,
-          DL: DecisionLog<RQ, OP>,
-          PL: PersistentDecisionLog<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
-          NT: LogTransferSendNode<RQ, OP::Serialization, LTMsg<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>>,
+impl<RQ, OP, DL, NT, PL, EX> LogTransferProtocolInitializer<RQ, OP, DL, PL, EX, NT>
+    for CollabLogTransfer<RQ, OP, DL, NT, PL, EX>
+where
+    RQ: SerType + 'static,
+    OP: LoggableOrderProtocol<RQ>,
+    DL: DecisionLog<RQ, OP>,
+    PL: PersistentDecisionLog<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
+    NT: LogTransferSendNode<
+        RQ,
+        OP::Serialization,
+        LTMsg<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
+    >,
 {
-    fn initialize(config: Self::Config, timeout: Timeouts, node: Arc<NT>, log: PL) -> Result<Self> where Self: Sized, PL: PersistentDecisionLog<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>, NT: LogTransferSendNode<RQ, OP::Serialization, Self::Serialization> {
-        let LogTransferConfig {
-            timeout_duration
-        } = config;
+    fn initialize(config: Self::Config, timeout: Timeouts, node: Arc<NT>, log: PL) -> Result<Self>
+    where
+        Self: Sized,
+        PL: PersistentDecisionLog<
+            RQ,
+            OP::Serialization,
+            OP::PersistableTypes,
+            DL::LogSerialization,
+        >,
+        NT: LogTransferSendNode<RQ, OP::Serialization, Self::Serialization>,
+    {
+        let LogTransferConfig { timeout_duration } = config;
 
         let log_transfer = Self {
             curr_seq: SeqNo::ZERO,
@@ -234,42 +313,73 @@ impl<RQ, OP, DL, NT, PL, EX> LogTransferProtocolInitializer<RQ, OP, DL, PL, EX, 
     }
 }
 
-impl<RQ, OP, DL, NT, PL, EX> LogTransferProtocol<RQ, OP, DL> for CollabLogTransfer<RQ, OP, DL, NT, PL, EX>
-    where RQ: SerType + 'static,
-          OP: LoggableOrderProtocol<RQ>,
-          DL: DecisionLog<RQ, OP>,
-          PL: PersistentDecisionLog<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
-          NT: LogTransferSendNode<RQ, OP::Serialization, LTMsg<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>>, {
-
+impl<RQ, OP, DL, NT, PL, EX> LogTransferProtocol<RQ, OP, DL>
+    for CollabLogTransfer<RQ, OP, DL, NT, PL, EX>
+where
+    RQ: SerType + 'static,
+    OP: LoggableOrderProtocol<RQ>,
+    DL: DecisionLog<RQ, OP>,
+    PL: PersistentDecisionLog<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
+    NT: LogTransferSendNode<
+        RQ,
+        OP::Serialization,
+        LTMsg<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
+    >,
+{
     type Serialization = LTMsg<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>;
     type Config = LogTransferConfig;
 
     fn request_latest_log<V>(&mut self, decision_log: &mut DL, view: V) -> Result<()>
-        where V: NetworkView,
+    where
+        V: NetworkView,
     {
         self.log_transfer_state = LogTransferState::FetchingSeqNo(0, FetchSeqNoData::new());
 
         let lg_seq = self.next_seq();
         let message = LTMessage::new(lg_seq, LogTransferMessageKind::RequestLogState);
 
-        info!("{:?} // Requesting latest consensus seq no with seq {:?}", self.node.id(), lg_seq);
+        info!(
+            "{:?} // Requesting latest consensus seq no with seq {:?}",
+            self.node.id(),
+            lg_seq
+        );
 
-        self.timeouts.timeout_lt_request(self.default_timeout, view.quorum() as u32, message.sequence_number());
+        self.timeouts.timeout_lt_request(
+            self.default_timeout,
+            view.quorum() as u32,
+            message.sequence_number(),
+        );
 
-        self.node.broadcast_signed(message, view.quorum_members().clone().into_iter());
+        self.node
+            .broadcast_signed(message, view.quorum_members().clone().into_iter());
 
         Ok(())
     }
 
-    fn poll(&mut self) -> Result<LTPollResult<LogTM<RQ, OP::Serialization, Self::Serialization>, RQ>> {
+    fn poll(
+        &mut self,
+    ) -> Result<LTPollResult<LogTM<RQ, OP::Serialization, Self::Serialization>, RQ>> {
         Ok(LTPollResult::ReceiveMsg)
     }
 
-    fn handle_off_ctx_message<V>(&mut self, decision_log: &mut DL, view: V, message: StoredMessage<LogTM<RQ, OP::Serialization, Self::Serialization>>) -> Result<()>
-        where V: NetworkView, {
+    fn handle_off_ctx_message<V>(
+        &mut self,
+        decision_log: &mut DL,
+        view: V,
+        message: StoredMessage<LogTM<RQ, OP::Serialization, Self::Serialization>>,
+    ) -> Result<()>
+    where
+        V: NetworkView,
+    {
         let (header, message) = message.into_inner();
 
-        debug!("{:?} // Off context Log Transfer Message {:?} from {:?} with seq {:?}", self.node.id(),message, header.from(), message.sequence_number());
+        debug!(
+            "{:?} // Off context Log Transfer Message {:?} from {:?} with seq {:?}",
+            self.node.id(),
+            message,
+            header.from(),
+            message.sequence_number()
+        );
 
         match message.kind() {
             LogTransferMessageKind::RequestLogState => {
@@ -296,29 +406,31 @@ impl<RQ, OP, DL, NT, PL, EX> LogTransferProtocol<RQ, OP, DL> for CollabLogTransf
             _ => {}
         }
 
-        let status = self.process_message(
-            decision_log,
-            view,
-            StoredMessage::new(header, message),
-        )?;
+        let status =
+            self.process_message(decision_log, view, StoredMessage::new(header, message))?;
 
         match status {
             LTResult::NotNeeded | LTResult::Running => (),
             // should not happen...
             _ => {
-                return Err(anyhow!(format!("Invalid state reached while processing log transfer message! {:?}", status)));
+                return Err(anyhow!(format!(
+                    "Invalid state reached while processing log transfer message! {:?}",
+                    status
+                )));
             }
         }
 
         Ok(())
     }
 
-    fn process_message<V>(&mut self,
-                          decision_log: &mut DL,
-                          view: V,
-                          message: StoredMessage<LogTM<RQ, OP::Serialization, Self::Serialization>>)
-                          -> Result<LTResult<RQ>>
-        where V: NetworkView,
+    fn process_message<V>(
+        &mut self,
+        decision_log: &mut DL,
+        view: V,
+        message: StoredMessage<LogTM<RQ, OP::Serialization, Self::Serialization>>,
+    ) -> Result<LTResult<RQ>>
+    where
+        V: NetworkView,
     {
         let (header, message) = message.into_inner();
 
@@ -335,24 +447,33 @@ impl<RQ, OP, DL, NT, PL, EX> LogTransferProtocol<RQ, OP, DL> for CollabLogTransf
                 self.process_log_request(decision_log, header, message)?;
                 return Ok(LTResult::Running);
             }
-            _ => ()
+            _ => (),
         }
 
         if message.sequence_number() != self.curr_seq {
-            warn!("{:?} // Received out of order log transfer message {:?} vs curr {:?}", self.node.id(),
-                    message.sequence_number(), self.curr_seq);
+            warn!(
+                "{:?} // Received out of order log transfer message {:?} vs curr {:?}",
+                self.node.id(),
+                message.sequence_number(),
+                self.curr_seq
+            );
 
             return Ok(LTResult::Running);
         }
 
-        self.timeouts.received_log_request(header.from(), message.sequence_number());
+        self.timeouts
+            .received_log_request(header.from(), message.sequence_number());
 
         let lt_state = std::mem::replace(&mut self.log_transfer_state, LogTransferState::Init);
 
         match lt_state {
             LogTransferState::Init => {
                 // Nothing is being done and this isn't a request, so ignore it
-                debug!("{:?} // Received log transfer message {:?} in Init state", self.node.id(), message);
+                debug!(
+                    "{:?} // Received log transfer message {:?} in Init state",
+                    self.node.id(),
+                    message
+                );
 
                 self.log_transfer_state = LogTransferState::Init;
 
@@ -363,9 +484,17 @@ impl<RQ, OP, DL, NT, PL, EX> LogTransferProtocol<RQ, OP, DL> for CollabLogTransf
                     LogTransferMessageKind::ReplyLogState(data) => {
                         if let Some((first_seq, (last_seq, last_seq_proof))) = data {
                             if decision_log.verify_sequence_number(last_seq, &last_seq_proof)? {
-                                info!("{:?} // Received vote for sequence number range {:?} - {:?}", self.node.id(), first_seq, last_seq);
+                                info!(
+                                    "{:?} // Received vote for sequence number range {:?} - {:?}",
+                                    self.node.id(),
+                                    first_seq,
+                                    last_seq
+                                );
 
-                                let current_count = curr_state.received_initial_seq.entry(first_seq).or_insert_with(|| 0);
+                                let current_count = curr_state
+                                    .received_initial_seq
+                                    .entry(first_seq)
+                                    .or_insert_with(|| 0);
 
                                 *current_count += 1;
 
@@ -399,7 +528,11 @@ impl<RQ, OP, DL, NT, PL, EX> LogTransferProtocol<RQ, OP, DL> for CollabLogTransf
                     if curr_state.last_seq > decision_log.sequence_number() {
                         let seq = curr_state.last_seq;
 
-                        info!("{:?} // Installing sequence number and requesting decision log {:?}", self.node.id(), seq);
+                        info!(
+                            "{:?} // Installing sequence number and requesting decision log {:?}",
+                            self.node.id(),
+                            seq
+                        );
 
                         let data = FetchSeqNo::from(&curr_state);
 
@@ -418,7 +551,10 @@ impl<RQ, OP, DL, NT, PL, EX> LogTransferProtocol<RQ, OP, DL> for CollabLogTransf
                     } else {
                         self.log_transfer_state = LogTransferState::FetchingSeqNo(i, curr_state);
 
-                        info!("{:?} // No need to request log state, we are up to date", self.node.id());
+                        info!(
+                            "{:?} // No need to request log state, we are up to date",
+                            self.node.id()
+                        );
                         return Ok(LTResult::NotNeeded);
                     }
                 } else {
@@ -448,7 +584,11 @@ impl<RQ, OP, DL, NT, PL, EX> LogTransferProtocol<RQ, OP, DL> for CollabLogTransf
 
                                 self.log_transfer_state = LogTransferState::Init;
 
-                                return Ok(LTResult::LTPFinished(first_log_seq, last_log_seq, requests_to_execute));
+                                return Ok(LTResult::LTPFinished(
+                                    first_log_seq,
+                                    last_log_seq,
+                                    requests_to_execute,
+                                ));
                             } else {
                                 error!("{:?} // Received log with sequence number {:?} but expected {:?} or higher", self.node.id(), log.sequence_number(), last_log_seq);
                             }
@@ -457,7 +597,8 @@ impl<RQ, OP, DL, NT, PL, EX> LogTransferProtocol<RQ, OP, DL> for CollabLogTransf
                         }
                     }
                     _ => {
-                        self.log_transfer_state = LogTransferState::FetchingLog(i, data, current_log);
+                        self.log_transfer_state =
+                            LogTransferState::FetchingLog(i, data, current_log);
 
                         // Drop messages that are not relevant to us at this time
                         return Ok(LTResult::Running);
@@ -477,12 +618,14 @@ impl<RQ, OP, DL, NT, PL, EX> LogTransferProtocol<RQ, OP, DL> for CollabLogTransf
                     Ok(LTResult::Running)
                 };
             }
-            LogTransferState::FetchingLogParts(_, _) => todo!()
+            LogTransferState::FetchingLogParts(_, _) => todo!(),
         }
     }
 
     fn handle_timeout<V>(&mut self, view: V, timeout: Vec<RqTimeout>) -> Result<LTTimeoutResult>
-        where V: NetworkView, {
+    where
+        V: NetworkView,
+    {
         for lt_seq in timeout {
             if let TimeoutKind::LogTransfer(lt_seq) = lt_seq.timeout_kind() {
                 if let LTTimeoutResult::RunLTP = self.timed_out(*lt_seq) {
@@ -520,11 +663,13 @@ impl<P> FetchSeqNoData<P> {
 
 impl<P> From<&FetchSeqNoData<P>> for FetchSeqNo {
     fn from(value: &FetchSeqNoData<P>) -> Self {
-        let mut received_votes: Vec<_> = value.received_initial_seq.iter().map(|(seq, count)| (*seq, *count)).collect();
+        let mut received_votes: Vec<_> = value
+            .received_initial_seq
+            .iter()
+            .map(|(seq, count)| (*seq, *count))
+            .collect();
 
-        received_votes.sort_by(|a, b| {
-            a.1.cmp(&b.1).reverse()
-        });
+        received_votes.sort_by(|a, b| a.1.cmp(&b.1).reverse());
 
         let (first_seq, votes) = received_votes.swap_remove(0);
 
