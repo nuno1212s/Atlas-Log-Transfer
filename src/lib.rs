@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use lazy_static::lazy_static;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::marker::PhantomData;
@@ -16,7 +17,8 @@ use atlas_core::ordering_protocol::loggable::{LoggableOrderProtocol, PProof};
 use atlas_core::ordering_protocol::networking::serialize::NetworkView;
 use atlas_core::ordering_protocol::OrderingProtocol;
 
-use atlas_core::timeouts::{RqTimeout, TimeoutKind, Timeouts};
+use atlas_core::timeouts::timeout::{ModTimeout, TimeoutModHandle, TimeoutableMod};
+use atlas_core::timeouts::TimeoutID;
 use atlas_logging_core::decision_log::serialize::OrderProtocolLog;
 use atlas_logging_core::decision_log::{DecLog, DecisionLog};
 use atlas_logging_core::log_transfer::networking::LogTransferSendNode;
@@ -85,7 +87,7 @@ where
         DecLog<D, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
     >,
     /// Reference to the timeouts module
-    timeouts: Timeouts,
+    timeouts: TimeoutModHandle,
     /// Reference to the persistent log
     persistent_log: PL,
     node: Arc<NT>,
@@ -125,7 +127,8 @@ where
         let next_seq = self.next_seq();
         let message = LTMessage::new(next_seq, LogTransferMessageKind::RequestLog);
 
-        self.node
+        let _ = self
+            .node
             .broadcast_signed(message, view.quorum_members().clone().into_iter());
 
         Ok(())
@@ -168,7 +171,7 @@ where
             header.from()
         );
 
-        self.node.send_signed(message, header.from(), true);
+        let _ = self.node.send_signed(message, header.from(), true);
 
         Ok(())
     }
@@ -213,7 +216,7 @@ where
 
                 let response_msg = LTMessage::new(message.sequence_number(), message_kind);
 
-                self.node.send_signed(response_msg, header.from(), true);
+                let _ = self.node.send_signed(response_msg, header.from(), true);
             }
             _ => {
                 unreachable!()
@@ -250,7 +253,7 @@ where
 
         let message = LTMessage::new(message.sequence_number(), message_kind);
 
-        self.node.send_signed(message, header.from(), true);
+        let _ = self.node.send_signed(message, header.from(), true);
 
         Ok(())
     }
@@ -282,7 +285,12 @@ where
         LTMsg<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
     >,
 {
-    fn initialize(config: Self::Config, timeout: Timeouts, node: Arc<NT>, log: PL) -> Result<Self>
+    fn initialize(
+        config: Self::Config,
+        timeout: TimeoutModHandle,
+        node: Arc<NT>,
+        log: PL,
+    ) -> Result<Self>
     where
         Self: Sized,
         PL: PersistentDecisionLog<
@@ -306,6 +314,32 @@ where
         };
 
         Ok(log_transfer)
+    }
+}
+
+lazy_static! {
+    static ref MOD_NAME: Arc<str> = Arc::from("DEFAULT_LOG_TRANSFER");
+}
+
+impl<RQ, OP, DL, NT, PL, EX> TimeoutableMod<LTTimeoutResult>
+    for CollabLogTransfer<RQ, OP, DL, NT, PL, EX>
+where
+    RQ: SerType + 'static,
+    OP: LoggableOrderProtocol<RQ>,
+    DL: DecisionLog<RQ, OP>,
+    PL: PersistentDecisionLog<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
+    NT: LogTransferSendNode<
+        RQ,
+        OP::Serialization,
+        LTMsg<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
+    >,
+{
+    fn mod_name() -> Arc<str> {
+        MOD_NAME.clone()
+    }
+
+    fn handle_timeout(&mut self, timeout: Vec<ModTimeout>) -> Result<LTTimeoutResult> {
+        todo!()
     }
 }
 
@@ -340,13 +374,16 @@ where
             lg_seq
         );
 
-        self.timeouts.timeout_lt_request(
+        let _ = self.timeouts.request_timeout(
+            TimeoutID::SeqNoBased(message.sequence_number()),
+            None,
             self.default_timeout,
-            view.quorum() as u32,
-            message.sequence_number(),
+            view.quorum(),
+            false,
         );
 
-        self.node
+        let _ = self
+            .node
             .broadcast_signed(message, view.quorum_members().clone().into_iter());
 
         Ok(())
@@ -457,8 +494,10 @@ where
             return Ok(LTResult::Running);
         }
 
-        self.timeouts
-            .received_log_request(header.from(), message.sequence_number());
+        let _ = self.timeouts.ack_received(
+            TimeoutID::SeqNoBased(message.sequence_number()),
+            header.from(),
+        );
 
         let lt_state = std::mem::replace(&mut self.log_transfer_state, LogTransferState::Init);
 
@@ -616,21 +655,6 @@ where
             }
             LogTransferState::FetchingLogParts(_, _) => todo!(),
         }
-    }
-
-    fn handle_timeout<V>(&mut self, _view: V, timeout: Vec<RqTimeout>) -> Result<LTTimeoutResult>
-    where
-        V: NetworkView,
-    {
-        for lt_seq in timeout {
-            if let TimeoutKind::LogTransfer(lt_seq) = lt_seq.timeout_kind() {
-                if let LTTimeoutResult::RunLTP = self.timed_out(*lt_seq) {
-                    return Ok(LTTimeoutResult::RunLTP);
-                }
-            }
-        }
-
-        Ok(LTTimeoutResult::NotNeeded)
     }
 }
 
