@@ -338,7 +338,7 @@ where
         MOD_NAME.clone()
     }
 
-    fn handle_timeout(&mut self, timeout: Vec<ModTimeout>) -> Result<LTTimeoutResult> {
+    fn handle_timeout(&mut self, _timeout: Vec<ModTimeout>) -> Result<LTTimeoutResult> {
         todo!()
     }
 }
