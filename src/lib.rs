@@ -11,7 +11,7 @@ use log::{debug, error, info, warn};
 use atlas_common::error::*;
 
 use atlas_common::ordering::{Orderable, SeqNo};
-use atlas_common::serialization_helper::SerType;
+use atlas_common::serialization_helper::SerMsg;
 use atlas_communication::message::{Header, StoredMessage};
 use atlas_core::ordering_protocol::loggable::{LoggableOrderProtocol, PProof};
 use atlas_core::ordering_protocol::networking::serialize::NetworkView;
@@ -73,7 +73,7 @@ pub type Serialization<LT, D, OP, POP> = <LT as LogTransferProtocol<D, OP, POP>>
 
 pub struct CollabLogTransfer<D, OP, DL, NT, PL, EX>
 where
-    D: SerType + 'static,
+    D: SerMsg + 'static,
     OP: LoggableOrderProtocol<D>,
     DL: DecisionLog<D, OP>,
 {
@@ -96,7 +96,7 @@ where
 
 impl<D, OP, DL, NT, PL, EX> CollabLogTransfer<D, OP, DL, NT, PL, EX>
 where
-    D: SerType + 'static,
+    D: SerMsg + 'static,
     OP: LoggableOrderProtocol<D>,
     DL: DecisionLog<D, OP>,
 {
@@ -275,7 +275,7 @@ where
 impl<RQ, OP, DL, NT, PL, EX> LogTransferProtocolInitializer<RQ, OP, DL, PL, EX, NT>
     for CollabLogTransfer<RQ, OP, DL, NT, PL, EX>
 where
-    RQ: SerType + 'static,
+    RQ: SerMsg + 'static,
     OP: LoggableOrderProtocol<RQ>,
     DL: DecisionLog<RQ, OP>,
     PL: PersistentDecisionLog<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
@@ -324,7 +324,7 @@ lazy_static! {
 impl<RQ, OP, DL, NT, PL, EX> TimeoutableMod<LTTimeoutResult>
     for CollabLogTransfer<RQ, OP, DL, NT, PL, EX>
 where
-    RQ: SerType + 'static,
+    RQ: SerMsg + 'static,
     OP: LoggableOrderProtocol<RQ>,
     DL: DecisionLog<RQ, OP>,
     PL: PersistentDecisionLog<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
@@ -346,7 +346,7 @@ where
 impl<RQ, OP, DL, NT, PL, EX> LogTransferProtocol<RQ, OP, DL>
     for CollabLogTransfer<RQ, OP, DL, NT, PL, EX>
 where
-    RQ: SerType + 'static,
+    RQ: SerMsg + 'static,
     OP: LoggableOrderProtocol<RQ>,
     DL: DecisionLog<RQ, OP>,
     PL: PersistentDecisionLog<RQ, OP::Serialization, OP::PersistableTypes, DL::LogSerialization>,
