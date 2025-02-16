@@ -2,13 +2,13 @@ use atlas_common::ordering::Orderable;
 use atlas_common::serialization_helper::SerMsg;
 use atlas_communication::message::Header;
 use atlas_communication::reconfiguration::NetworkInformationProvider;
-use std::marker::PhantomData;
-use std::sync::Arc;
 use atlas_core::ordering_protocol::loggable::message::PersistentOrderProtocolTypes;
 use atlas_core::ordering_protocol::networking::serialize::OrderingProtocolMessage;
 use atlas_logging_core::decision_log::serialize::DecisionLogMessage;
 use atlas_logging_core::log_transfer::networking::serialize::LogTransferMessage;
 use atlas_logging_core::log_transfer::networking::signature_ver::LogTransferVerificationHelper;
+use std::marker::PhantomData;
+use std::sync::Arc;
 
 use crate::messages::{LTMessage, LogTransferMessageKind};
 
