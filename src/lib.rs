@@ -339,7 +339,8 @@ where
     }
 
     fn handle_timeout(&mut self, _timeout: Vec<ModTimeout>) -> Result<LTTimeoutResult> {
-        todo!()
+        //TODO: Handle timeouts
+        Ok(LTTimeoutResult::NotNeeded)
     }
 }
 
